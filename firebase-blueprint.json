@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Information about a user (creator or member).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["creator", "member"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Creator": {
+      "title": "Creator",
+      "description": "Extended profile for creators.",
+      "type": "object",
+      "properties": {
+        "bio": { "type": "string" },
+        "bannerImage": { "type": "string" },
+        "links": { "type": "array" }
+      }
+    },
+    "Tier": {
+      "title": "Tier",
+      "description": "Membership tiers offered by a creator.",
+      "type": "object",
+      "properties": {
+        "creatorId": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "description": { "type": "string" },
+        "features": { "type": "array" }
+      },
+      "required": ["creatorId", "name", "price"]
+    },
+    "Drop": {
+      "title": "Drop",
+      "description": "Content drop published by a creator.",
+      "type": "object",
+      "properties": {
+        "creatorId": { "type": "string" },
+        "tierId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["pdf", "figma", "link", "video"] },
+        "url": { "type": "string" },
+        "releasedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["creatorId", "tierId", "title", "type", "url"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Represents a member's subscription to a creator's tier.",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "tierId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "cancelled"] },
+        "startedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["memberId", "creatorId", "tierId", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Core user profiles."
+    },
+    "/creators/{creatorId}": {
+      "schema": "Creator",
+      "description": "Creator-specific metadata."
+    },
+    "/tiers/{tierId}": {
+      "schema": "Tier",
+      "description": "Available membership tiers."
+    },
+    "/drops/{dropId}": {
+      "schema": "Drop",
+      "description": "Published content drops."
+    },
+    "/subscriptions/{subId}": {
+      "schema": "Subscription",
+      "description": "User subscriptions."
+    }
+  }
+}

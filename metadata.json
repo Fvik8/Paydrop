@@ -1,0 +1,10 @@
+{
+  "name": "Paydrop",
+  "description": "Premium membership platform for creators showcasing exclusive content drops with a luxury tech aesthetic.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "Firebase Authentication",
+    "Real-time Analytics Dashboard",
+    "Digital Content Vault"
+  ]
+}
