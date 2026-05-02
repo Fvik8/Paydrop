@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { ChevronRight, Zap, Star, ShieldCheck, ArrowUpRight, X, Check, Users, Layers } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 
 export default function Home() {
@@ -21,10 +21,11 @@ export default function Home() {
     } else {
       if (!user) return;
       setIsSubmitting(true);
+      const path = 'subscriptions';
       try {
         // Create actual subscription
         const subId = `${user.uid}_demo_creator`; // Demo: subscribing to a dummy creator
-        await setDoc(doc(db, 'subscriptions', subId), {
+        await setDoc(doc(db, path, subId), {
           memberId: user.uid,
           creatorId: 'demo_creator_id',
           tierId: 'elite_tier',
@@ -41,7 +42,7 @@ export default function Home() {
         setCheckoutStep(1);
         navigate('/dashboard');
       } catch (err) {
-        console.error(err);
+        handleFirestoreError(err, OperationType.WRITE, path);
       } finally {
         setIsSubmitting(false);
       }
@@ -243,19 +244,26 @@ export default function Home() {
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
+            {[
+              { id: 'creator_1', name: 'Elena Vance', tag: 'Visual Arts' },
+              { id: 'creator_2', name: 'Marcus Aurelius', tag: 'Strategy' },
+              { id: 'creator_3', name: 'Sarah Drasner', tag: 'Engineering' },
+              { id: 'creator_4', name: 'Vito Corleone', tag: 'Foundations' }
+            ].map((creator) => (
               <motion.div 
-                key={i}
+                key={creator.id}
                 whileHover={{ y: -5 }}
-                className="premium-card aspect-square p-6 flex flex-col justify-between group cursor-pointer"
+                onClick={() => navigate(`/creator/${creator.id}`)}
+                className="premium-card aspect-square p-6 flex flex-col justify-between group cursor-pointer overflow-hidden relative"
               >
-                <div className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center text-brand">
-                  <Layers className="w-5 h-5" />
+                <div className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center text-brand relative z-10 transition-transform group-hover:scale-110">
+                  <Users className="w-5 h-5" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold truncate">Premium Kit #{i}</p>
-                  <p className="text-[10px] text-white/30 uppercase tracking-widest font-semibold">Limited Release</p>
+                <div className="relative z-10">
+                  <p className="text-sm font-bold truncate">{creator.name}</p>
+                  <p className="text-[10px] text-white/30 uppercase tracking-widest font-semibold">{creator.tag}</p>
                 </div>
+                <div className="absolute right-[-10%] bottom-[-10%] w-20 h-20 bg-brand/5 blur-xl rounded-full group-hover:bg-brand/20 transition-all duration-500" />
               </motion.div>
             ))}
           </div>

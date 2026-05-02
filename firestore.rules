@@ -1,12 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // 0. Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helpers
+    // 3. Path Variable & Identity Helpers
     function isSignedIn() {
       return request.auth != null;
     }
@@ -19,14 +19,56 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function getCreator(creatorId) {
-      return get(/databases/$(database)/documents/users/$(creatorId)).data;
+    function incoming() {
+      return request.resource.data;
     }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 2. Validation Blueprints
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 255 &&
+             data.role in ['creator', 'member'] &&
+             data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.keys().size() <= 8;
+    }
+
+    function isValidDrop(data) {
+      return data.creatorId is string && data.creatorId.size() <= 128 &&
+             data.tierId is string && data.tierId.size() <= 128 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.type in ['pdf', 'figma', 'link', 'video'] &&
+             data.url is string && data.url.size() <= 2000 &&
+             data.keys().hasAll(['creatorId', 'tierId', 'title', 'type', 'url']) &&
+             data.keys().size() <= 10;
+    }
+
+    function isValidSubscription(data) {
+      return data.memberId is string && data.memberId.size() <= 128 &&
+             data.creatorId is string && data.creatorId.size() <= 128 &&
+             data.tierId is string && data.tierId.size() <= 128 &&
+             data.status in ['active', 'cancelled'] &&
+             data.keys().hasAll(['memberId', 'creatorId', 'tierId', 'status']) &&
+             data.keys().size() <= 8;
+    }
+
+    function isServerTimestamp(ts) {
+      return ts is timestamp && ts == request.time;
+    }
+
+    // --- Collections ---
 
     // User profiles
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner(userId);
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn() && isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && 
+                    incoming().uid == existing().uid &&
+                    incoming().email == existing().email;
     }
 
     // Creator metadata
@@ -38,27 +80,38 @@ service cloud.firestore {
     // Tiers
     match /tiers/{tierId} {
       allow read: if true;
-      allow create: if isSignedIn() && request.resource.data.creatorId == request.auth.uid;
-      allow update, delete: if isOwner(resource.data.creatorId);
+      allow create: if isSignedIn() && incoming().creatorId == request.auth.uid;
+      allow update, delete: if isOwner(existing().creatorId);
     }
 
     // Drops
     match /drops/{dropId} {
-      function canAccessDrop(dropData) {
-        return isOwner(dropData.creatorId) || 
-               exists(/databases/$(database)/documents/subscriptions/$(request.auth.uid + '_' + dropData.creatorId));
+      function canAccessDrop() {
+        return isOwner(existing().creatorId) || 
+               exists(/databases/$(database)/documents/subscriptions/$(request.auth.uid + '_' + existing().creatorId));
       }
 
-      allow read: if isSignedIn() && canAccessDrop(resource.data);
-      allow create: if isSignedIn() && request.resource.data.creatorId == request.auth.uid;
-      allow update, delete: if isOwner(resource.data.creatorId);
+      // 8. Secure List Queries: Evaluation against resource.data only, no exists() in list
+      allow get: if isSignedIn() && isValidId(dropId) && canAccessDrop();
+      allow list: if isSignedIn() && (isOwner(resource.data.creatorId));
+      
+      allow create: if isSignedIn() && isValidId(dropId) && isOwner(incoming().creatorId) && 
+                    isValidDrop(incoming()) && isServerTimestamp(incoming().releasedAt);
+      allow update: if isSignedIn() && isValidId(dropId) && isOwner(existing().creatorId) && 
+                    isValidDrop(incoming()) && incoming().creatorId == existing().creatorId;
+      allow delete: if isOwner(existing().creatorId) && isValidId(dropId);
     }
 
     // Subscriptions
     match /subscriptions/{subId} {
-      allow read: if isSignedIn() && (resource.data.memberId == request.auth.uid || resource.data.creatorId == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.memberId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.memberId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(subId) && (resource.data.memberId == request.auth.uid || resource.data.creatorId == request.auth.uid);
+      allow list: if isSignedIn() && (resource.data.memberId == request.auth.uid || resource.data.creatorId == request.auth.uid);
+      
+      allow create: if isSignedIn() && isValidId(subId) && isOwner(incoming().memberId) && 
+                    isValidSubscription(incoming()) && isServerTimestamp(incoming().startedAt);
+      allow update: if isSignedIn() && isValidId(subId) && isOwner(existing().memberId) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+      );
     }
   }
 }

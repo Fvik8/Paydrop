@@ -8,6 +8,7 @@ import { AuthProvider } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
+import CreatorProfile from './pages/CreatorProfile';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/creator/:id" element={<CreatorProfile />} />
             </Routes>
           </main>
           

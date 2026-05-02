@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { auth, db } from '../lib/firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface UserProfile {
@@ -32,21 +32,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(user);
       if (user) {
         // Fetch or create profile
-        const profileRef = doc(db, 'users', user.uid);
-        const profileSnap = await getDoc(profileRef);
-        
-        if (profileSnap.exists()) {
-          setProfile(profileSnap.data() as UserProfile);
-        } else {
-          const newProfile: UserProfile = {
-            uid: user.uid,
-            email: user.email || '',
-            displayName: user.displayName || 'Anonymous',
-            photoURL: user.photoURL || '',
-            role: 'member',
-          };
-          await setDoc(profileRef, newProfile);
-          setProfile(newProfile);
+        const path = `users/${user.uid}`;
+        try {
+          const profileRef = doc(db, 'users', user.uid);
+          const profileSnap = await getDoc(profileRef);
+          
+          if (profileSnap.exists()) {
+            setProfile(profileSnap.data() as UserProfile);
+          } else {
+            const newProfile: UserProfile = {
+              uid: user.uid,
+              email: user.email || '',
+              displayName: user.displayName || 'Anonymous',
+              photoURL: user.photoURL || '',
+              role: 'member',
+            };
+            await setDoc(profileRef, newProfile);
+            setProfile(newProfile);
+          }
+        } catch (error) {
+          // Note: we don't necessarily throw here to avoid infinite loops if AuthProvider re-renders, 
+          // but we log it correctly as per instructions.
+          try {
+            handleFirestoreError(error, OperationType.GET, path);
+          } catch (e) {
+            console.error(e);
+          }
         }
       } else {
         setProfile(null);
@@ -68,9 +79,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateRole = async (role: 'creator' | 'member') => {
     if (!user) return;
-    const profileRef = doc(db, 'users', user.uid);
-    await setDoc(profileRef, { role }, { merge: true });
-    setProfile((prev) => prev ? { ...prev, role } : null);
+    const path = `users/${user.uid}`;
+    try {
+      const profileRef = doc(db, 'users', user.uid);
+      await setDoc(profileRef, { role }, { merge: true });
+      setProfile((prev) => prev ? { ...prev, role } : null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
   };
 
   return (

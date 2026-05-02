@@ -23,10 +23,12 @@ import {
   where, 
   onSnapshot, 
   addDoc, 
+  setDoc,
+  doc,
   serverTimestamp,
   orderBy 
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -55,44 +57,73 @@ export default function Dashboard() {
   const [members, setMembers] = useState<any[]>([]);
   const [newDrop, setNewDrop] = useState({ title: '', type: 'link' as const, url: '', tier: 'Elite' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [creatorProfile, setCreatorProfile] = useState({ bio: '', bannerImage: '' });
 
   useEffect(() => {
     if (!user) return;
 
     // Fetch Drops
+    const dropsPath = 'drops';
     const dropsQuery = query(
-      collection(db, 'drops'),
+      collection(db, dropsPath),
       where('creatorId', '==', user.uid),
       orderBy('releasedAt', 'desc')
     );
 
     const unsubDrops = onSnapshot(dropsQuery, (snap) => {
       setDrops(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, dropsPath);
     });
 
     // Fetch Members (via subscriptions)
+    const membersPath = 'subscriptions';
     const membersQuery = query(
-      collection(db, 'subscriptions'),
+      collection(db, membersPath),
       where('creatorId', '==', user.uid)
     );
 
     const unsubMembers = onSnapshot(membersQuery, (snap) => {
       setMembers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, membersPath);
+    });
+
+    // Fetch Creator Meta
+    const metaDoc = doc(db, 'creators', user.uid);
+    const unsubMeta = onSnapshot(metaDoc, (snap) => {
+      if (snap.exists()) {
+        setCreatorProfile(snap.data() as any);
+      }
     });
 
     return () => {
       unsubDrops();
       unsubMembers();
+      unsubMeta();
     };
   }, [user]);
+
+  const handleUpdateCreatorMeta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'creators', user.uid), creatorProfile, { merge: true });
+      setShowSettings(false);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `creators/${user.uid}`);
+    }
+  };
 
   const handleCreateDrop = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || isSubmitting) return;
 
     setIsSubmitting(true);
+    const path = 'drops';
     try {
-      await addDoc(collection(db, 'drops'), {
+      await addDoc(collection(db, path), {
         ...newDrop,
         creatorId: user.uid,
         tierId: 'elite_tier', // simplified for demo
@@ -101,7 +132,7 @@ export default function Dashboard() {
       setShowCreateDrop(false);
       setNewDrop({ title: '', type: 'link', url: '', tier: 'Elite' });
     } catch (err) {
-      console.error(err);
+      handleFirestoreError(err, OperationType.WRITE, path);
     } finally {
       setIsSubmitting(false);
     }
@@ -135,6 +166,12 @@ export default function Dashboard() {
               {tab.label}
             </button>
           ))}
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="px-4 py-2 rounded-lg text-sm text-white/40 hover:text-white transition-all ml-2"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -341,6 +378,76 @@ export default function Dashboard() {
               </table>
             )}
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSettings(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md premium-card p-8 shadow-2xl border-white/10"
+            >
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="absolute top-4 right-4 text-white/40 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="mb-8">
+                <h3 className="text-2xl font-bold">Public Profile</h3>
+                <p className="text-white/40 text-sm">Control how your fans see your vault.</p>
+              </div>
+
+              <form onSubmit={handleUpdateCreatorMeta} className="space-y-6">
+                <div>
+                  <label className="block text-xs font-bold text-white/40 mb-2 uppercase tracking-widest">Public Bio</label>
+                  <textarea 
+                    value={creatorProfile.bio}
+                    onChange={(e) => setCreatorProfile({...creatorProfile, bio: e.target.value})}
+                    placeholder="Tell your fans what they get by joining your elite circle..."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand/50 h-32 md:h-24 resize-none"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold text-white/40 mb-2 uppercase tracking-widest">Banner Image URL</label>
+                  <input 
+                    value={creatorProfile.bannerImage}
+                    onChange={(e) => setCreatorProfile({...creatorProfile, bannerImage: e.target.value})}
+                    type="url" 
+                    placeholder="https://images.unsplash.com/..."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-brand/50"
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-4">
+                  <Button type="submit" className="flex-1">
+                    Save Changes
+                  </Button>
+                   <Button 
+                    type="button" 
+                    variant="ghost" 
+                    className="flex-1"
+                    onClick={() => window.open(`/creator/${user?.uid}`, '_blank')}
+                  >
+                    Preview
+                  </Button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
